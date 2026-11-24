@@ -17,6 +17,23 @@ window.gZenVerticalTabsManager = {
     this._toolbarOriginalParent =
       document.getElementById("nav-bar").parentElement;
 
+    this._onTransientSidebarTabSelect = () => this.showTransientSidebar();
+    window.addEventListener(
+      "TabSelect",
+      this._onTransientSidebarTabSelect
+    );
+    window.addEventListener(
+      "unload",
+      () => {
+        window.removeEventListener(
+          "TabSelect",
+          this._onTransientSidebarTabSelect
+        );
+        window.clearTimeout(this._transientSidebarTimer);
+      },
+      { once: true }
+    );
+
     window.addEventListener("ZenCompactMode:LayoutUpdate", () =>
       this._updateEvent()
     );
@@ -46,6 +63,40 @@ window.gZenVerticalTabsManager = {
     const newVal = !Services.prefs.getBoolPref("zen.view.sidebar-expanded");
     Services.prefs.setBoolPref("zen.view.sidebar-expanded", newVal);
     Services.prefs.setBoolPref("zen.view.use-single-toolbar", false);
+  },
+
+  showTransientSidebar(durationMs = 3000) {
+    if (
+      !this._prefsVerticalTabs ||
+      this._prefsSidebarExpanded ||
+      this.isLittleWindow ||
+      document.hidden
+    ) {
+      return;
+    }
+
+    const toolbox = this.navigatorToolbox;
+    const tabContainer = gBrowser?.tabContainer;
+    if (!toolbox || !tabContainer || !document.documentElement) {
+      return;
+    }
+
+    window.clearTimeout(this._transientSidebarTimer);
+    toolbox.setAttribute("zen-sidebar-expanded", "true");
+    document.documentElement.setAttribute("zen-sidebar-expanded", "true");
+    tabContainer.setAttribute("expanded", "true");
+    this._hadSidebarCollapse = true;
+
+    this._transientSidebarTimer = window.setTimeout(() => {
+      delete this._transientSidebarTimer;
+      if (this._prefsSidebarExpanded) {
+        return;
+      }
+      toolbox.removeAttribute("zen-sidebar-expanded");
+      document.documentElement.removeAttribute("zen-sidebar-expanded");
+      tabContainer.removeAttribute("expanded");
+      delete this._hadSidebarCollapse;
+    }, durationMs);
   },
 
   get navigatorToolbox() {

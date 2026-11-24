@@ -2069,6 +2069,10 @@ class nsZenWorkspaces {
       previousWorkspaceIndex,
       previousWorkspace,
     });
+
+    if (!onInit) {
+      gZenVerticalTabsManager?.showTransientSidebar();
+    }
   }
 
   makeSureEmptyTabIsFirst() {
