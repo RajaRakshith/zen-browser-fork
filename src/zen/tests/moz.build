@@ -4,6 +4,7 @@
 
 BROWSER_CHROME_MANIFESTS += [
     "about/browser.toml",
+    "auto_archive/browser.toml",
     "boosts/browser.toml",
     "compact_mode/browser.toml",
     "container_essentials/browser.toml",
