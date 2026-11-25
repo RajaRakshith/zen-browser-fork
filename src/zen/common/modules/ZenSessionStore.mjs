@@ -37,6 +37,14 @@ class ZenSessionStore extends nsZenPreloadedFeature {
     }
     if (tabData.zenEssential) {
       tab.setAttribute("zen-essential", "true");
+      const workspaces = window.gZenWorkspaces?.getWorkspaces?.();
+      const ownerWorkspace = workspaces?.find(
+        workspace => workspace.uuid === tabData.zenWorkspace
+      );
+      const workspaceUuid = ownerWorkspace?.uuid || workspaces?.[0]?.uuid;
+      if (workspaceUuid) {
+        tab.setAttribute("zen-workspace-id", workspaceUuid);
+      }
     }
     if (tabData.zenDefaultUserContextId) {
       tab.setAttribute("zenDefaultUserContextId", "true");

@@ -328,7 +328,11 @@ class nsZenWorkspaces {
   }
 
   get shouldAnimateEssentials() {
-    return this.containerSpecificEssentials || !!this.creatingWorkspaceId;
+    return (
+      this.containerSpecificEssentials ||
+      this.getWorkspaces().length > 1 ||
+      !!this.creatingWorkspaceId
+    );
   }
 
   get activeWorkspaceElement() {
@@ -357,9 +361,22 @@ class nsZenWorkspaces {
       .getElementById("tabbrowser-arrowscrollbox")
       .appendChild(spaceElements);
     this._hasInitializedTabsStrip = true;
+    const workspaceIds = new Set(workspaces.map(workspace => workspace.uuid));
+    const fallbackWorkspaceId = workspaces[0]?.uuid || this.activeWorkspace;
     for (const tab of markupTabs) {
-      // Routes into the active space's strip now that one exists.
-      gBrowser.tabContainer.appendChild(tab);
+      if (tab.hasAttribute("zen-essential")) {
+        // Older sessions shared Essentials between spaces. Give those tabs
+        // one stable owner and place them in that space's section.
+        let workspaceId = tab.getAttribute("zen-workspace-id");
+        if (!workspaceIds.has(workspaceId)) {
+          workspaceId = fallbackWorkspaceId;
+          tab.setAttribute("zen-workspace-id", workspaceId);
+        }
+        this.getEssentialsSection(tab, workspaceId).appendChild(tab);
+      } else {
+        // Routes into the active space's strip now that one exists.
+        gBrowser.tabContainer.appendChild(tab);
+      }
     }
     if (markupTabs.length) {
       gBrowser.tabContainer._invalidateCachedTabs();
@@ -372,23 +389,31 @@ class nsZenWorkspaces {
   }
 
   /**
-   * The essentials section for a container.
+   * The Essentials section for an owning space and container.
    *
-   * @param {number|string|Element} [container] - A userContextId, as a number
-   *   or a numeric string (session data saved by older versions may hold
-   *   strings), or an element carrying a `usercontextid` attribute.
+   * @param {number|string|Element} [container] - A userContextId, a numeric
+   *   string, or a tab carrying `usercontextid` and `zen-workspace-id`.
+   * @param {string} [workspaceUuid=this.activeWorkspace] - The owning space.
    * @returns {Element}
    */
-  getEssentialsSection(container = 0) {
+  getEssentialsSection(container = 0, workspaceUuid = this.activeWorkspace) {
     if (container && typeof container === "object") {
+      workspaceUuid =
+        container.getAttribute("zen-workspace-id") || workspaceUuid;
       container = container.getAttribute("usercontextid");
     }
     container = parseInt(container, 10) || 0;
-    if (!this.containerSpecificEssentials) {
-      container = 0;
+    if (
+      !this._workspaceCache?.some(workspace => workspace.uuid === workspaceUuid)
+    ) {
+      workspaceUuid = this._workspaceCache?.[0]?.uuid || this.activeWorkspace;
     }
-    let essentialsContainer = document.querySelector(
-      `.zen-essentials-container[container="${container}"]`
+    let essentialsContainer = Array.from(
+      document.querySelectorAll("#zen-essentials .zen-essentials-container")
+    ).find(
+      section =>
+        section.getAttribute("workspace-id") === workspaceUuid &&
+        section.getAttribute("container") === String(container)
     );
     if (!essentialsContainer) {
       essentialsContainer = document.createXULElement("hbox");
@@ -396,6 +421,7 @@ class nsZenWorkspaces {
         "zen-essentials-container zen-workspace-tabs-section";
       essentialsContainer.setAttribute("flex", "1");
       essentialsContainer.setAttribute("container", container);
+      essentialsContainer.setAttribute("workspace-id", workspaceUuid);
       document
         .getElementById("zen-essentials")
         .appendChild(essentialsContainer);
@@ -404,10 +430,11 @@ class nsZenWorkspaces {
       });
     }
 
-    // Set a hidden state if the essentials section is not supposed
-    // to be shown on the current workspace, else remove the hidden state
+    // Essentials belong to one space. Preserve the existing container filter
+    // within that space when container-specific Essentials are enabled.
     if (
-      this.activeWorkspace === this.creatingWorkspaceId ||
+      workspaceUuid === this.creatingWorkspaceId ||
+      workspaceUuid !== this.activeWorkspace ||
       (this.containerSpecificEssentials &&
         this.getActiveWorkspaceFromCache()?.containerTabId + 0 != container)
     ) {
@@ -477,7 +504,10 @@ class nsZenWorkspaces {
   }
 
   getCurrentEssentialsContainer() {
-    return this.getEssentialsSection(this.getCurrentSpaceContainerId());
+    return this.getEssentialsSection(
+      this.getCurrentSpaceContainerId(),
+      this.activeWorkspace
+    );
   }
 
   #createWorkspaceElement(workspace) {
@@ -597,7 +627,15 @@ class nsZenWorkspaces {
 
   #sessionRestoreContainer(aTabData) {
     if (aTabData.zenEssential) {
-      return this.getEssentialsSection(aTabData.userContextId);
+      const restoredWorkspace = this._workspaceCache?.find(
+        workspace => workspace.uuid === aTabData.zenWorkspace
+      );
+      const workspaceUuid =
+        restoredWorkspace?.uuid || this._workspaceCache?.[0]?.uuid;
+      return this.getEssentialsSection(
+        aTabData.userContextId,
+        workspaceUuid
+      );
     }
     let spaceElement = this.workspaceElement(aTabData.zenWorkspace);
     if (!spaceElement?.tabsContainer) {
@@ -611,10 +649,9 @@ class nsZenWorkspaces {
   }
 
   #sessionRestoreAnchor(aContainer) {
-    // Essentials are shared between spaces, so a restore only ever adds to
-    // what is already there. Every other section gets the restored tabs in
-    // front of whatever the window started with, which is the tab the startup
-    // page opened with and which belongs at the end.
+    // Essentials append to their owning space's section. Every other section
+    // gets restored tabs in front of the startup page tab, which belongs at
+    // the end.
     if (aContainer.classList.contains("zen-essentials-container")) {
       return null;
     }
@@ -2187,8 +2224,6 @@ class nsZenWorkspaces {
     } else {
       nextSpaceIdx = workspaceIndex;
     }
-    const workspaceContextId = workspace.containerTabId;
-    const nextWorkspaceContextId = workspaces[nextSpaceIdx]?.containerTabId;
     const isCreatingWorkspace = workspace.uuid === this.creatingWorkspaceId;
     for (const otherWorkspace of workspaces) {
       const element = this.workspaceElement(otherWorkspace.uuid);
@@ -2204,30 +2239,27 @@ class nsZenWorkspaces {
         element.style.transform = transform;
       }
     }
-    // Hide other essentials with different containerTabId
+    // Show Essentials only for the active space, with the adjacent space's
+    // section included during a swipe animation.
     for (const container of otherContainersEssentials) {
-      // Get the next workspace contextId, if it's the same, dont apply offsetPixels
-      // if it's not we do apply it
-      if (
-        isCreatingWorkspace ||
-        (container.getAttribute("container") != workspace.containerTabId &&
-          this.shouldAnimateEssentials)
-      ) {
+      const sectionWorkspaceId = container.getAttribute("workspace-id");
+      const isCurrentWorkspace = sectionWorkspaceId === workspace.uuid;
+      const isNextWorkspace =
+        offsetPixels && sectionWorkspaceId === workspaces[nextSpaceIdx]?.uuid;
+      if (isCreatingWorkspace || (!isCurrentWorkspace && !isNextWorkspace)) {
         container.setAttribute("hidden", "true");
       } else {
         container.removeAttribute("hidden");
       }
       if (
-        nextWorkspaceContextId !== workspaceContextId &&
         offsetPixels &&
         this.shouldAnimateEssentials &&
-        (container.getAttribute("container") == nextWorkspaceContextId ||
-          container.getAttribute("container") == workspaceContextId)
+        (isCurrentWorkspace || isNextWorkspace)
       ) {
         container.removeAttribute("hidden");
         // Animate from the currently selected workspace
         const transform =
-          container.getAttribute("container") == workspaceContextId
+          isCurrentWorkspace
             ? `translateX(${offsetPixels / 2}%)`
             : // Animate from the next workspace, towards the current one
               `translateX(${offsetPixels / 2 + (offsetPixels > 0 ? -100 : 100)}%)`;
@@ -2426,7 +2458,10 @@ class nsZenWorkspaces {
         if (workspace.uuid === creatingWorkspaceId) {
           continue;
         }
-        const element = this.getEssentialsSection(workspace.containerTabId);
+        const element = this.getEssentialsSection(
+          workspace.containerTabId,
+          workspace.uuid
+        );
         if (!essentialsElements.has(element)) {
           essentialsElements.set(element, []);
         }
@@ -2643,8 +2678,12 @@ class nsZenWorkspaces {
 
     // Handle essential tabs
     if (isEssential) {
+      if (tabWorkspaceId !== workspaceUuid) {
+        return false;
+      }
+
       if (!this.containerSpecificEssentials) {
-        return true; // Show all essential tabs when containerSpecificEssentials is false
+        return true;
       }
 
       if (containerId) {
@@ -3094,16 +3133,9 @@ class nsZenWorkspaces {
       }
       const workspacesIds = [];
       if (entry.target.closest("#zen-essentials")) {
-        const workspaces = this.getWorkspaces().filter(w => {
-          if (!this.containerSpecificEssentials) {
-            return true;
-          }
-          const userContextId = parseInt(
-            entry.target.getAttribute("container") || "0"
-          );
-          return this.#spaceContainerId(w) === userContextId;
-        });
-        workspacesIds.push(...workspaces.map(w => w.uuid));
+        const ownerWorkspaceId =
+          entry.target.getAttribute("workspace-id") || this.activeWorkspace;
+        workspacesIds.push(ownerWorkspaceId);
       } else {
         workspacesIds.push(originalWorkspaceId);
       }
@@ -3125,7 +3157,8 @@ class nsZenWorkspaces {
         const arrowScrollbox = workspaceElement.tabsContainer;
         const pinnedContainer = workspaceElement.pinnedTabsContainer;
         const essentialContainer = this.getEssentialsSection(
-          workspaceObject.containerTabId
+          workspaceObject.containerTabId,
+          workspaceObject.uuid
         );
         const essentialNumChildren = [...essentialContainer.children].filter(
           child => !child.hasAttribute("zen-drag-placeholder")
@@ -3625,11 +3658,14 @@ class nsZenWorkspaces {
     try {
       const currentWorkspace = this.getActiveWorkspaceFromCache();
       // Check if we need to change workspace
+      const isEssential = tab.hasAttribute("zen-essential");
+      const tabWorkspaceId = tab.getAttribute("zen-workspace-id");
       if (
-        (tab.getAttribute("zen-workspace-id") !== this.activeWorkspace &&
-          !tab.hasAttribute("zen-essential")) ||
-        (currentWorkspace.containerTabId !==
-          parseInt(tab.parentNode.getAttribute("container")) &&
+        (tabWorkspaceId !== this.activeWorkspace &&
+          !tab.hasAttribute("zen-empty-tab")) ||
+        (!isEssential &&
+          currentWorkspace.containerTabId !==
+            parseInt(tab.parentNode.getAttribute("container")) &&
           this.containerSpecificEssentials)
       ) {
         // Use a mutex-like approach to prevent concurrent workspace changes
@@ -3641,15 +3677,14 @@ class nsZenWorkspaces {
         }
 
         let workspaceToSwitch = undefined;
-        if (tab.hasAttribute("zen-essential")) {
-          // Find first workspace with the same container
-          const containerTabId = parseInt(
-            tab.parentNode.getAttribute("container")
-          );
-          // +0 to convert to number
-          workspaceToSwitch = this._workspaceCache.find(
-            workspace => workspace.containerTabId + 0 === containerTabId
-          );
+        if (isEssential) {
+          workspaceToSwitch = this.getWorkspaceFromId(tabWorkspaceId);
+          if (!workspaceToSwitch) {
+            workspaceToSwitch = this._workspaceCache?.[0];
+            if (workspaceToSwitch) {
+              tab.setAttribute("zen-workspace-id", workspaceToSwitch.uuid);
+            }
+          }
         } else {
           workspaceToSwitch = this.getWorkspaceFromId(
             tab.getAttribute("zen-workspace-id")

@@ -221,7 +221,11 @@ export class ZenSpaceAddSwipe {
     for (const essentials of document.querySelectorAll(
       "#zen-essentials .zen-workspace-tabs-section"
     )) {
-      if (essentials.getAttribute("container") != current.containerTabId) {
+      if (
+        essentials.getAttribute("workspace-id") !== current.uuid ||
+        (gZenWorkspaces.containerSpecificEssentials &&
+          essentials.getAttribute("container") != current.containerTabId)
+      ) {
         this.#hideDuringSwipe(essentials);
       }
     }

@@ -610,11 +610,30 @@ class nsZenWindowSync {
    * @param {Window} aWindow - The window containing the items.
    */
   #syncItemPosition(aOriginalItem, aTargetItem, aWindow) {
-    const { gBrowser, gZenPinnedTabManager } = aWindow;
+    const { gBrowser, gZenPinnedTabManager, gZenWorkspaces } = aWindow;
     const originalIsEssential = aOriginalItem.hasAttribute("zen-essential");
     const targetIsEssential = aTargetItem.hasAttribute("zen-essential");
     const originalIsPinned = aOriginalItem.pinned;
     const targetIsPinned = aTargetItem.pinned;
+    if (originalIsEssential) {
+      const sourceWorkspaceId =
+        aOriginalItem.getAttribute("zen-workspace-id") ||
+        aOriginalItem.documentGlobal.gZenWorkspaces.activeWorkspace;
+      const targetWorkspaces = gZenWorkspaces.getWorkspaces();
+      const targetWorkspaceId = aTargetItem.getAttribute("zen-workspace-id");
+      const ownerWorkspaceId = targetWorkspaces.some(
+        workspace => workspace.uuid === sourceWorkspaceId
+      )
+        ? sourceWorkspaceId
+        : targetWorkspaces.some(
+              workspace => workspace.uuid === targetWorkspaceId
+            )
+          ? targetWorkspaceId
+          : gZenWorkspaces.activeWorkspace;
+      if (ownerWorkspaceId) {
+        aTargetItem.setAttribute("zen-workspace-id", ownerWorkspaceId);
+      }
+    }
 
     const isGroup = gBrowser.isTabGroup(aOriginalItem);
     const isTab = !isGroup;

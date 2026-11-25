@@ -522,6 +522,9 @@ class nsZenPinnedTabManager extends nsZenDOMOperatedFeature {
     for (let i = 0; i < tabs.length; i++) {
       // eslint-disable-next-line no-shadow
       let tab = tabs[i];
+      const workspaceId =
+        tab.getAttribute("zen-workspace-id") || gZenWorkspaces.activeWorkspace;
+      tab.setAttribute("zen-workspace-id", workspaceId);
       const section = gZenWorkspaces.getEssentialsSection(tab);
       // canEssentialBeAdded gates user-initiated adds on the *active* space's
       // container. A replicated add mirrors a decision already made in another
@@ -536,9 +539,6 @@ class nsZenPinnedTabManager extends nsZenDOMOperatedFeature {
         continue;
       }
       tab.setAttribute("zen-essential", "true");
-      if (tab.hasAttribute("zen-workspace-id")) {
-        tab.removeAttribute("zen-workspace-id");
-      }
       if (tab.pinned) {
         gBrowser.zenHandleTabMove(tab, () => {
           if (tab.documentGlobal !== window) {
@@ -586,21 +586,25 @@ class nsZenPinnedTabManager extends nsZenDOMOperatedFeature {
             `(unpin=${unpin})`
         );
       }
-      tab.removeAttribute("zen-essential");
-      if (
-        gZenWorkspaces.workspaceEnabled &&
-        gZenWorkspaces.getActiveWorkspaceFromCache().uuid
-      ) {
-        tab.setAttribute(
-          "zen-workspace-id",
-          gZenWorkspaces.getActiveWorkspaceFromCache().uuid
-        );
+      const workspaceId =
+        tab.getAttribute("zen-workspace-id") ||
+        gZenWorkspaces.activeWorkspace ||
+        gZenWorkspaces.getWorkspaces()[0]?.uuid;
+      if (workspaceId) {
+        tab.setAttribute("zen-workspace-id", workspaceId);
       }
+      tab.removeAttribute("zen-essential");
       if (unpin) {
         gBrowser.unpinTab(tab);
+        if (gZenWorkspaces.workspaceEnabled) {
+          gZenWorkspaces.moveTabToWorkspace(tab, workspaceId);
+        }
       } else {
         gBrowser.zenHandleTabMove(tab, () => {
-          const pinContainer = gZenWorkspaces.pinnedTabsContainer;
+          const workspace = gZenWorkspaces.workspaceElement(workspaceId);
+          const pinContainer =
+            workspace?.pinnedTabsContainer ||
+            gZenWorkspaces.pinnedTabsContainer;
           pinContainer.prepend(tab);
         });
       }

@@ -31,11 +31,15 @@ add_task(async function test_Create_Workspace_Without_Containers() {
     "New workspace should use the default container"
   );
   ok(
-    BrowserTestUtils.isVisible(essentialsContainer),
-    "Essentials are shown in the new workspace"
+    BrowserTestUtils.isHidden(essentialsContainer),
+    "Essentials remain hidden outside their owning workspace"
   );
 
   await gZenWorkspaces.changeWorkspace(originalWorkspace);
+  ok(
+    BrowserTestUtils.isVisible(essentialsContainer),
+    "Essentials are visible in their owning workspace"
+  );
   await gZenWorkspaces.removeWorkspace(workspace.uuid);
   await BrowserTestUtils.removeTab(essentialTab);
   await SpecialPowers.popPrefEnv();
@@ -69,12 +73,6 @@ add_task(async function test_Restore_Workspace_Without_Container() {
     win.gZenWorkspaces.activeWorkspace,
     workspace.uuid,
     "New window opens on the restored workspace"
-  );
-  ok(
-    BrowserTestUtils.isVisible(
-      win.document.querySelector('.zen-essentials-container[container="0"]')
-    ),
-    "Essentials are shown in the restored workspace"
   );
   await BrowserTestUtils.closeWindow(win);
 
