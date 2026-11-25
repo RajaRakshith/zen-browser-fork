@@ -9,6 +9,8 @@ prefs = [
 
 ["browser_library_closed_tab_icon.js"]
 
+["browser_library_auto_archive.js"]
+
 ["browser_library_customize_tabs.js"]
 
 ["browser_library_download_badge_windows.js"]

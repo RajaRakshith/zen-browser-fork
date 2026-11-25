@@ -20,6 +20,8 @@ ChromeUtils.defineESModuleGetters(
   {
     ZenLibraryHistorySection:
       "moz-src:///zen/library/sections/ZenLibraryHistorySection.mjs",
+    ZenLibraryArchiveSection:
+      "moz-src:///zen/library/sections/ZenLibraryArchiveSection.mjs",
     ZenLibraryDownloadsSection:
       "moz-src:///zen/library/sections/ZenLibraryDownloadsSection.mjs",
     ZenLibraryBoostsSection:
@@ -111,6 +113,9 @@ export class ZenLibrary extends MozLitElement {
           }
         : {}),
       history: lazy.ZenLibraryHistorySection,
+      ...(!window.gZenWorkspaces.privateWindowOrDisabled
+        ? { archive: lazy.ZenLibraryArchiveSection }
+        : {}),
     };
     this.customizing = false;
     const lastTab = Services.prefs.getStringPref(LAST_TAB_PREF, "history");
